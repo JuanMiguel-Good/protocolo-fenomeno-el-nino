@@ -5,8 +5,8 @@ import { buildPdf, buildXlsx, saveFile, TIPOS } from "./registro.js";
 import { $, $$, esc, ssGet, ssSet, ssDel, todayISO, isoToEs, fileStamp, fmtDateTime, readLogoFile, imageSize, SignaturePad } from "./util.js";
 
 const A = {
-  clave: null, sinClave: false, showPw: false, view: "login", err: "", msg: "", busy: false,
-  list: [], codigo: null, asist: [], form: null, editDni: null, incluirPend: false,
+  dni: null, view: "login", err: "", msg: "", busy: false,
+  list: [], admins: [], codigo: null, asist: [], form: null, editDni: null, incluirPend: false,
 };
 let respPad = null;
 
@@ -19,15 +19,12 @@ const emptyForm = () => ({
 function errText(e) {
   const c = e instanceof ApiError ? e.code : "x";
   return ({
-    clave: "La clave no es correcta.",
-    bloqueado: "Hubo demasiados intentos fallidos. Espera 10 minutos y vuelve a probar.",
-    sin_clave: "Todavía no hay clave definida. Recarga la página para crearla.",
+    no_admin: "Este DNI no es administrador.",
+    dni: "Escribe un DNI de 8 números.",
+    ultimo_admin: "No puedes quitar al último administrador.",
     red: "No hay conexión con el servidor. Revisa tu internet.",
     no_encontrado: "No se encontró el registro. Actualiza la lista.",
     nombre: "Escribe el nombre.",
-    corta: "La clave debe tener al menos 8 caracteres.",
-    ya_definida: "La clave ya fue definida. Entra con ella.",
-    demo: "En modo demostración la clave no se puede cambiar.",
   })[c] || "No se pudo completar la acción. Intenta de nuevo.";
 }
 
@@ -132,18 +129,10 @@ function sessionBlocks() {
 
 /* ---------- Vistas ---------- */
 function loginView() {
-  if (A.sinClave) {
-    return `<div class="card"><div class="eyebrow">Primera vez</div><h1>Define tu clave</h1>
-  <p class="lead">Es la clave del panel del capacitador. Hazlo ahora: mientras no exista, quien abra esta página primero puede definirla.</p>
-  <div class="field"><label for="clave">Clave nueva (mínimo 8 caracteres)</label><input id="clave" type="password" autocomplete="new-password" maxlength="100"></div>
-  <div class="field"><label for="clave2">Repite la clave</label><input id="clave2" type="password" autocomplete="new-password" maxlength="100"></div>
-  <p class="ferr" role="alert" ${A.err ? "" : "hidden"}>${esc(A.err)}</p>
-  <div class="row"><button class="btn" data-act="setpw" ${A.busy ? "disabled" : ""}>${A.busy ? "Guardando..." : "Guardar clave"}</button></div></div>`;
-  }
   return `<div class="card"><div class="eyebrow">Administración</div><h1>Panel del capacitador</h1>
-  <p class="lead">Crea la capacitación, carga la lista de DNI y comparte el link.</p>
-  ${isDemo ? '<div class="save-note" style="margin-bottom:12px">Modo demostración. La clave es <b>demo</b>.</div>' : ""}
-  <div class="field"><label for="clave">Clave de administrador</label><input id="clave" type="password" autocomplete="current-password" maxlength="100"></div>
+  <p class="lead">Entra con tu DNI para crear la capacitación, cargar la lista y compartir el link.</p>
+  ${isDemo ? '<div class="save-note" style="margin-bottom:12px">Modo demostración. El administrador de prueba es el DNI <b>40667929</b>.</div>' : ""}
+  <div class="field"><label for="dni">DNI</label><input id="dni" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 dígitos"></div>
   <p class="ferr" role="alert" ${A.err ? "" : "hidden"}>${esc(A.err)}</p>
   <div class="row"><button class="btn" data-act="login" ${A.busy ? "disabled" : ""}>${A.busy ? "Entrando..." : "Entrar"}</button></div></div>`;
 }
@@ -152,9 +141,19 @@ function listView() {
   const rows = A.list.map((s) => `<tr><td><b>${esc(s.razon_social || "Sin nombre")}</b><div class="note" style="margin:2px 0 0">${esc(s.tema || "")}</div></td><td>${s.fecha ? isoToEs(s.fecha) : "-"}</td><td>${s.completados} de ${s.total}</td><td><b>${esc(s.codigo)}</b></td><td><button class="btn sm" data-act="open" data-code="${esc(s.codigo)}">Abrir</button></td></tr>`).join("");
   return `<div class="card"><div class="eyebrow">Administración</div><h1>Tus capacitaciones</h1>
   ${A.msg ? `<div class="save-note" role="status">${esc(A.msg)}</div>` : ""}${A.err ? `<p class="ferr" role="alert">${esc(A.err)}</p>` : ""}
-  <div class="row"><button class="btn" data-act="new">Nueva capacitación</button><button class="btn alt" data-act="logout">Salir del panel</button><button class="btn alt" data-act="pwtoggle">Cambiar clave</button></div>
-  ${A.showPw ? `<div class="card" style="margin-top:14px"><h3>Cambiar clave</h3><div class="grid2"><div class="field"><label for="pw-nueva">Clave nueva (mínimo 8 caracteres)</label><input id="pw-nueva" type="password" autocomplete="new-password" maxlength="100"></div><div class="field"><label for="pw-nueva2">Repite la clave nueva</label><input id="pw-nueva2" type="password" autocomplete="new-password" maxlength="100"></div></div><div class="row" style="margin-top:6px"><button class="btn sm" data-act="pwsave">Guardar clave nueva</button></div></div>` : ""}
+  <div class="row"><button class="btn" data-act="new">Nueva capacitación</button><button class="btn alt" data-act="admins">Administradores</button><button class="btn alt" data-act="logout">Salir del panel</button></div>
   ${A.list.length ? `<div style="overflow-x:auto;margin-top:16px"><table class="tbl"><thead><tr><th>Empresa y tema</th><th>Fecha</th><th>Firmaron</th><th>Código</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="note" style="margin-top:16px">Todavía no creaste ninguna capacitación.</p>`}</div>`;
+}
+
+function adminsView() {
+  const rows = A.admins.map((d) => `<tr><td>${esc(d)}${d === A.dni ? ' <span class="tag ok">Tú</span>' : ""}</td><td><div class="acts"><button class="btn danger sm" data-act="rmadmin" data-dni="${esc(d)}" ${A.admins.length <= 1 ? "disabled" : ""}>Quitar</button></div></td></tr>`).join("");
+  return `<div class="card"><div class="eyebrow">Administración</div><h1>Administradores</h1>
+  <p class="note" style="margin:0 0 12px">Cada administrador entra al panel con su DNI y puede crear capacitaciones, agregar trabajadores y agregar o quitar administradores.</p>
+  ${A.msg ? `<div class="save-note" role="status">${esc(A.msg)}</div>` : ""}${A.err ? `<p class="ferr" role="alert">${esc(A.err)}</p>` : ""}
+  <div class="row"><button class="btn alt sm" data-act="tolist">Volver a la lista</button></div>
+  <div class="grid2" style="margin-top:14px"><div>${fldRaw("n-admin", "DNI del nuevo administrador", "", "8 dígitos", "text", 'inputmode="numeric" maxlength="8" autocomplete="off"')}
+  <div class="row" style="margin-top:8px"><button class="btn sm" data-act="addadmin">Agregar administrador</button></div></div></div>
+  <div style="overflow-x:auto;margin-top:16px"><table class="tbl"><thead><tr><th>DNI</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
 function editView() {
@@ -166,7 +165,8 @@ function editView() {
 
 export function render() {
   const m = $("#main");
-  m.innerHTML = `<div class="adm">${A.view === "login" ? loginView() : A.view === "list" ? listView() : editView()}</div>`;
+  const view = { login: loginView, list: listView, admins: adminsView, edit: editView }[A.view]();
+  m.innerHTML = `<div class="adm">${view}</div>`;
   respPad = null;
   if (A.view === "edit") {
     respPad = new SignaturePad($("#rsPad"), $("#rsPh"));
@@ -179,8 +179,8 @@ async function guard(fn) {
   try { return await fn(); }
   catch (e) {
     const code = e instanceof ApiError ? e.code : "";
-    if (code === "clave" || code === "bloqueado" || code === "sin_clave") {
-      if (A.view !== "login") { A.clave = null; ssDel("ml-fen:clave"); A.view = "login"; }
+    if (code === "no_admin") {
+      if (A.view !== "login") { A.dni = null; ssDel("ml-fen:dni"); A.view = "login"; }
     }
     A.err = errText(e); A.busy = false; render();
     return undefined;
@@ -188,49 +188,59 @@ async function guard(fn) {
 }
 
 async function login() {
-  const c = ($("#clave").value || "").trim();
-  if (!c) { A.err = "Escribe la clave."; render(); return; }
+  const dni = ($("#dni").value || "").replace(/\D/g, "");
+  if (!/^\d{8}$/.test(dni)) { A.err = "Escribe un DNI de 8 números."; render(); return; }
   A.busy = true; A.err = ""; render();
-  const list = await guard(() => api.admin.listar(c));
+  const list = await guard(() => api.admin.listar(dni));
   A.busy = false;
   if (!list) return;
-  A.clave = c; ssSet("ml-fen:clave", c);
+  A.dni = dni; ssSet("ml-fen:dni", dni);
   A.list = list; A.view = "list"; A.err = ""; A.msg = "";
   render();
 }
 
-async function setPw() {
-  const a = $("#clave").value, b = $("#clave2").value;
-  if (a.length < 8) { A.err = errText(new ApiError("corta")); render(); return; }
-  if (a !== b) { A.err = "Las dos claves no coinciden."; render(); return; }
-  A.busy = true; A.err = ""; render();
-  const r = await guard(() => api.admin.definirClave(a));
-  A.busy = false;
+async function refreshList() {
+  const list = await guard(() => api.admin.listar(A.dni));
+  if (list) A.list = list;
+}
+
+async function loadAdmins() {
+  const admins = await guard(() => api.admin.listarAdmins(A.dni));
+  if (admins) A.admins = admins;
+  return admins;
+}
+
+async function openAdmins() {
+  A.err = ""; A.msg = "";
+  if (await loadAdmins()) { A.view = "admins"; render(); window.scrollTo({ top: 0 }); }
+}
+
+async function addAdmin() {
+  const dni = ($("#n-admin").value || "").replace(/\D/g, "");
+  if (!/^\d{8}$/.test(dni)) { toast("Escribe un DNI de 8 números"); return; }
+  A.err = "";
+  const r = await guard(() => api.admin.agregarAdmin(A.dni, dni));
   if (!r) return;
-  A.sinClave = false; A.err = "";
-  const list = await guard(() => api.admin.listar(a));
-  if (!list) return;
-  A.clave = a; ssSet("ml-fen:clave", a); A.list = list; A.view = "list"; A.msg = "Clave definida. Ya puedes crear tu primera capacitación.";
+  A.msg = `DNI ${dni} agregado como administrador.`;
+  await loadAdmins();
   render();
 }
 
-async function savePw() {
-  const a = $("#pw-nueva").value, b = $("#pw-nueva2").value;
-  if (a.length < 8) { toast("La clave debe tener al menos 8 caracteres"); return; }
-  if (a !== b) { toast("Las dos claves no coinciden"); return; }
-  const r = await guard(() => api.admin.cambiarClave(A.clave, a));
+async function removeAdmin(dni) {
+  const esMio = dni === A.dni;
+  if (!window.confirm(`¿Quitar el permiso de administrador al DNI ${dni}?${esMio ? " Como es tu DNI, saldrás del panel." : ""}`)) return;
+  A.err = "";
+  const r = await guard(() => api.admin.quitarAdmin(A.dni, dni));
   if (!r) return;
-  A.clave = a; ssSet("ml-fen:clave", a); A.showPw = false; A.msg = "Clave cambiada."; A.err = ""; render();
-}
-
-async function refreshList() {
-  const list = await guard(() => api.admin.listar(A.clave));
-  if (list) A.list = list;
+  if (esMio) { A.dni = null; ssDel("ml-fen:dni"); A.view = "login"; A.msg = ""; render(); return; }
+  A.msg = `DNI ${dni} quitado de administradores.`;
+  await loadAdmins();
+  render();
 }
 
 async function openSession(code) {
   A.err = ""; A.msg = "";
-  const r = await guard(() => api.admin.obtener(A.clave, code));
+  const r = await guard(() => api.admin.obtener(A.dni, code));
   if (!r) return;
   const s = r.sesion;
   A.codigo = s.codigo;
@@ -242,7 +252,7 @@ async function openSession(code) {
 
 async function reloadAsist(keepMsg) {
   collectForm();
-  const r = await guard(() => api.admin.obtener(A.clave, A.codigo));
+  const r = await guard(() => api.admin.obtener(A.dni, A.codigo));
   if (!r) return;
   A.asist = r.asistentes || [];
   if (!keepMsg) A.msg = "";
@@ -264,8 +274,8 @@ async function save() {
   if (v) { A.err = v; A.msg = ""; render(); window.scrollTo({ top: 0 }); return; }
   A.busy = true; A.err = ""; render();
   const r = await guard(async () => {
-    if (A.codigo) { await api.admin.actualizar(A.clave, A.codigo, A.form); return A.codigo; }
-    return api.admin.crear(A.clave, A.form);
+    if (A.codigo) { await api.admin.actualizar(A.dni, A.codigo, A.form); return A.codigo; }
+    return api.admin.crear(A.dni, A.form);
   });
   A.busy = false;
   if (!r) return;
@@ -292,7 +302,7 @@ function parseBulk(raw) {
 
 async function addMany(items) {
   collectForm();
-  const r = await guard(() => api.admin.lote(A.clave, A.codigo, items));
+  const r = await guard(() => api.admin.lote(A.dni, A.codigo, items));
   if (!r) return;
   if (r.errores && r.errores.length) A.err = "No se pudieron agregar: " + r.errores.join("; ");
   A.msg = r.agregados ? `${r.agregados} ${r.agregados === 1 ? "persona agregada" : "personas agregadas"}.` : "";
@@ -334,10 +344,10 @@ async function onClick(e) {
   const act = el.dataset.act;
   switch (act) {
     case "login": return login();
-    case "setpw": return setPw();
-    case "pwtoggle": A.showPw = !A.showPw; return render();
-    case "pwsave": return savePw();
-    case "logout": A.clave = null; ssDel("ml-fen:clave"); A.view = "login"; A.err = ""; A.msg = ""; return render();
+    case "admins": return openAdmins();
+    case "addadmin": return addAdmin();
+    case "rmadmin": return removeAdmin(el.dataset.dni);
+    case "logout": A.dni = null; ssDel("ml-fen:dni"); A.view = "login"; A.err = ""; A.msg = ""; return render();
     case "new": A.codigo = null; A.form = emptyForm(); A.asist = []; A.err = ""; A.msg = ""; A.view = "edit"; render(); return window.scrollTo({ top: 0 });
     case "open": await openSession(el.dataset.code); return window.scrollTo({ top: 0 });
     case "tolist": collectForm(); await refreshList(); A.view = "list"; A.err = ""; render(); return;
@@ -367,27 +377,27 @@ async function onClick(e) {
       const nombre = ($("#e-nombre").value || "").trim(), area = ($("#e-area").value || "").trim();
       if (!nombre) { toast("Escribe el nombre"); return; }
       collectForm();
-      const r = await guard(() => api.admin.editar(A.clave, A.codigo, el.dataset.dni, nombre, area));
+      const r = await guard(() => api.admin.editar(A.dni, A.codigo, el.dataset.dni, nombre, area));
       if (!r) return;
       A.editDni = null; A.msg = "Datos actualizados."; return reloadAsist(true);
     }
     case "ereset": {
       if (!window.confirm(`¿Reiniciar el avance y la firma de ${el.dataset.name}? Tendrá que volver a empezar.`)) return;
       collectForm();
-      const r = await guard(() => api.admin.reiniciar(A.clave, A.codigo, el.dataset.dni));
+      const r = await guard(() => api.admin.reiniciar(A.dni, A.codigo, el.dataset.dni));
       if (!r) return;
       A.msg = "Avance reiniciado."; return reloadAsist(true);
     }
     case "edel": {
       if (!window.confirm(`¿Quitar a ${el.dataset.name} de la lista? Se borra su avance y su firma.`)) return;
       collectForm();
-      const r = await guard(() => api.admin.eliminarAsistente(A.clave, A.codigo, el.dataset.dni));
+      const r = await guard(() => api.admin.eliminarAsistente(A.dni, A.codigo, el.dataset.dni));
       if (!r) return;
       A.msg = "Persona quitada de la lista."; return reloadAsist(true);
     }
     case "delses": {
       if (!window.confirm("¿Eliminar esta capacitación con su lista y sus firmas? No se puede deshacer.")) return;
-      const r = await guard(() => api.admin.eliminarSesion(A.clave, A.codigo));
+      const r = await guard(() => api.admin.eliminarSesion(A.dni, A.codigo));
       if (!r) return;
       await refreshList(); A.view = "list"; A.codigo = null; A.msg = "Capacitación eliminada."; A.err = ""; render(); return;
     }
@@ -418,12 +428,11 @@ export async function initAdmin() {
   const main = $("#main");
   main.addEventListener("click", onClick);
   main.addEventListener("change", onChange);
-  main.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "clave" && !A.sinClave) { e.preventDefault(); login(); } });
-  try { A.sinClave = !(await api.admin.estado()); } catch (e) { A.sinClave = false; }
-  const saved = ssGet("ml-fen:clave");
+  main.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "dni") { e.preventDefault(); login(); } });
+  const saved = ssGet("ml-fen:dni");
   if (saved) {
     const list = await (async () => { try { return await api.admin.listar(saved); } catch (e) { return null; } })();
-    if (list) { A.clave = saved; A.list = list; A.view = "list"; }
+    if (list) { A.dni = saved; A.list = list; A.view = "list"; }
   }
   render();
   window.A = A;
