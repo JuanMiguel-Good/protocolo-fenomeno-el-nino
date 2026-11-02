@@ -1,0 +1,17 @@
+{
+  "name": "microlearning-fen",
+  "version": "1.0.0",
+  "description": "Microlearning de SST ante el Fenómeno El Niño para trabajadores, con registro de capacitación en PDF y Excel",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
+  },
+  "devDependencies": {
+    "vite": "^6.4.5"
+  }
+}
